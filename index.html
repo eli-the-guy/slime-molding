@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Organic Flowing Slime Mold Lab v6 Fullscreen</title>
+    <title>Organic Slime Mold Lab v8</title>
     <style>
       body {
         margin: 0;
@@ -74,11 +74,11 @@
   </head>
   <body>
     <div id="left">
-      <h2>🧬 Organic Flowing Slime Mold Lab v6 Fullscreen</h2>
+      <h2>🧬 Organic Slime Mold Lab v8</h2>
       <canvas id="c"></canvas>
       <div>
-        <button onclick="spawnSlime()">Spawn New Species</button>
-        <button onclick="reset()">Reset</button>
+        <button onclick="spawnSpecies()">Spawn New Species</button>
+        <button onclick="resetLab()">Reset</button>
       </div>
     </div>
     <div id="right">
@@ -90,207 +90,428 @@
     </div>
 
     <script>
-      const c=document.getElementById('c'), ctx=c.getContext('2d');
-      const gCanvas=document.getElementById('graph'), gctx=gCanvas.getContext('2d');
+      const c = document.getElementById("c");
+      const ctx = c.getContext("2d");
+      const gCanvas = document.getElementById("graph");
+      const gctx = gCanvas.getContext("2d");
 
-      let speciesList=[], foods=[], selected=null, graphData=[];
-      let genStartTime=Date.now();
-      const GEN_DURATION=30;
+      let speciesList = [];
+      let foods = [];
+      let selected = null;
+      let graphData = [];
+      let genStartTime = Date.now();
+      const GEN_DURATION = 30;
 
-      function resizeCanvas(){
-        c.width = window.innerWidth - document.getElementById('right').offsetWidth;
+      function resizeCanvas() {
+        const sidebarWidth = document.getElementById("right").offsetWidth;
+        c.width = window.innerWidth - sidebarWidth;
         c.height = window.innerHeight;
       }
-      window.addEventListener('resize', resizeCanvas);
+      window.addEventListener("resize", resizeCanvas);
       resizeCanvas();
 
-      function randomColor(){const r=100+Math.floor(Math.random()*155); const g=100+Math.floor(Math.random()*155); const b=100+Math.floor(Math.random()*155); return `rgb(${r},${g},${b})`;}
-      function mutateGene(val,amount=0.05){return val+(Math.random()-0.5)*amount;}
+      // Utility
+      function randomColor() {
+        const r = 100 + Math.floor(Math.random() * 155);
+        const g = 100 + Math.floor(Math.random() * 155);
+        const b = 100 + Math.floor(Math.random() * 155);
+        return `rgb(${r},${g},${b})`;
+      }
+      function mutate(val, amount = 0.05) {
+        return val + (Math.random() - 0.5) * amount;
+      }
 
-      // Node class
-      class Node{
-        constructor(x,y,angle,genes={},parent=null){
-          this.x=x; this.y=y; this.angle=angle; this.parent=parent;
-          this.genes={
-            speed:genes.speed??1.5+Math.random()*0.5,
-            turnFactor:genes.turnFactor??(Math.random()-0.5)*0.5,
-            wanderBias:genes.wanderBias??0.5,
-            foodAttraction:genes.foodAttraction??0.05,
-            connectionAffinity:genes.connectionAffinity??0.02,
-            connectionDensity:genes.connectionDensity??10, // lighter for performance
-            stickiness:genes.stickiness??0.5,
-            branchAffinity:genes.branchAffinity??0.05,
-            edgeWobble:genes.edgeWobble??1.5,
-            colorShift:genes.colorShift??0.02,
-            growthBias:genes.growthBias??0.5
+      // Node
+      class Node {
+        constructor(x, y, angle, genes = {}, parent = null) {
+          this.x = x;
+          this.y = y;
+          this.angle = angle;
+          this.parent = parent;
+          this.genes = {
+            speed: genes.speed ?? 1.5,
+            turnFactor: genes.turnFactor ?? 0.3,
+            wanderBias: genes.wanderBias ?? 0.5,
+            foodAttraction: genes.foodAttraction ?? 0.05,
+            connectionAffinity: genes.connectionAffinity ?? 0.02,
+            connectionDensity: genes.connectionDensity ?? 10,
+            stickiness: genes.stickiness ?? 0.5,
+            branchAffinity: genes.branchAffinity ?? 0.05,
+            edgeWobble: genes.edgeWobble ?? 1.5,
+            colorShift: genes.colorShift ?? 0.02,
+            growthBias: genes.growthBias ?? 0.5,
           };
-          this.radius=5+Math.random()*2;
-          this.food=0;
-          this.connectionParticles=[];
+          this.radius = 5 + Math.random() * 2;
+          this.food = 0;
+          this.connectionParticles = [];
         }
-        senseFood(){
-          let nearest=null,minDist=50+Math.random()*50;
-          foods.forEach(f=>{let d=Math.hypot(f.x-this.x,f.y-this.y); if(d<minDist){nearest=f; minDist=d;}});
+
+        senseFood() {
+          let nearest = null,
+            minDist = 50 + Math.random() * 50;
+          foods.forEach((f) => {
+            const d = Math.hypot(f.x - this.x, f.y - this.y);
+            if (d < minDist) {
+              nearest = f;
+              minDist = d;
+            }
+          });
           return nearest;
         }
-        update(){
-          let target=this.senseFood();
-          let followFood=(target && Math.random()<this.genes.foodAttraction);
-          if(followFood){let angleToFood=Math.atan2(target.y-this.y,target.x-this.x); this.angle+=(angleToFood-this.angle)*0.05;}
-          else this.angle+=(Math.random()-0.5)*this.genes.turnFactor*this.genes.wanderBias;
 
-          this.x+=Math.cos(this.angle)*this.genes.speed;
-          this.y+=Math.sin(this.angle)*this.genes.speed;
+        update() {
+          let target = this.senseFood();
+          if (target && Math.random() < this.genes.foodAttraction) {
+            let angleToFood = Math.atan2(target.y - this.y, target.x - this.x);
+            this.angle += (angleToFood - this.angle) * 0.05;
+          } else {
+            this.angle +=
+              (Math.random() - 0.5) *
+              this.genes.turnFactor *
+              this.genes.wanderBias;
+          }
+          this.x += Math.cos(this.angle) * this.genes.speed;
+          this.y += Math.sin(this.angle) * this.genes.speed;
 
-          if(this.species){
-            this.species.nodes.forEach(n=>{
-              if(n===this) return;
-              let dx=n.x-this.x, dy=n.y-this.y, d=Math.hypot(dx,dy);
-              if(d>20) { this.x+=dx*this.genes.stickiness*0.01; this.y+=dy*this.genes.stickiness*0.01; }
+          if (this.species) {
+            this.species.nodes.forEach((n) => {
+              if (n === this) return;
+              let dx = n.x - this.x,
+                dy = n.y - this.y,
+                d = Math.hypot(dx, dy);
+              if (d > 20) {
+                this.x += dx * this.genes.stickiness * 0.01;
+                this.y += dy * this.genes.stickiness * 0.01;
+              }
             });
           }
 
-          if(this.x<this.radius){ this.x=this.radius; this.angle=Math.PI-this.angle; }
-          if(this.x>c.width-this.radius){ this.x=c.width-this.radius; this.angle=Math.PI-this.angle; }
-          if(this.y<this.radius){ this.y=this.radius; this.angle=-this.angle; }
-          if(this.y>c.height-this.radius){ this.y=c.height-this.radius; this.angle=-this.angle; }
+          // Walls
+          if (this.x < this.radius) {
+            this.x = this.radius;
+            this.angle = Math.PI - this.angle;
+          }
+          if (this.x > c.width - this.radius) {
+            this.x = c.width - this.radius;
+            this.angle = Math.PI - this.angle;
+          }
+          if (this.y < this.radius) {
+            this.y = this.radius;
+            this.angle = -this.angle;
+          }
+          if (this.y > c.height - this.radius) {
+            this.y = c.height - this.radius;
+            this.angle = -this.angle;
+          }
 
-          if(target && Math.hypot(target.x-this.x,target.y-this.y)<6){this.food++; foods.splice(foods.indexOf(target),1);}
+          // Eat
+          if (target && Math.hypot(target.x - this.x, target.y - this.y) < 6) {
+            this.food++;
+            foods.splice(foods.indexOf(target), 1);
+          }
 
-          if(this.parent){
-            this.connectionParticles.forEach(p=>{
-              p.t+=this.genes.connectionAffinity*p.dir;
-              if(p.t>=1){p.t=1; p.dir=-1;}
-              if(p.t<=0){p.t=0; p.dir=1;}
-              let dx=this.x-this.parent.x, dy=this.y-this.parent.y;
-              let len=Math.hypot(dx,dy);
-              let nx=-dy/len, ny=dx/len;
-              p.x=this.parent.x + dx*p.t + nx*p.jitter;
-              p.y=this.parent.y + dy*p.t + ny*p.jitter;
-
-              if(Math.random()<0.01){
-                let branch={x:p.x,y:p.y,vx:(Math.random()-0.5)*1.5,vy:(Math.random()-0.5)*1.5,lifetime:50};
-                p.branches=p.branches||[];
+          // Connections
+          if (this.parent) {
+            this.connectionParticles.forEach((p) => {
+              p.t += this.genes.connectionAffinity * p.dir;
+              if (p.t >= 1) {
+                p.t = 1;
+                p.dir = -1;
+              }
+              if (p.t <= 0) {
+                p.t = 0;
+                p.dir = 1;
+              }
+              let dx = this.x - this.parent.x,
+                dy = this.y - this.parent.y;
+              let len = Math.hypot(dx, dy);
+              let nx = -dy / len,
+                ny = dx / len;
+              p.x = this.parent.x + dx * p.t + nx * p.jitter;
+              p.y = this.parent.y + dy * p.t + ny * p.jitter;
+              if (Math.random() < 0.01) {
+                let branch = {
+                  x: p.x,
+                  y: p.y,
+                  vx: (Math.random() - 0.5) * 1.5,
+                  vy: (Math.random() - 0.5) * 1.5,
+                  lifetime: 50,
+                };
+                p.branches = p.branches || [];
                 p.branches.push(branch);
               }
-
-              if(p.branches) p.branches.forEach((b,i)=>{
-                b.x+=b.vx; b.y+=b.vy; b.lifetime--;
-                ctx.fillStyle='rgba(0,255,180,0.6)'; ctx.beginPath(); ctx.arc(b.x,b.y,1.5,0,Math.PI*2); ctx.fill();
-                if(b.lifetime<=0) p.branches.splice(i,1);
-                if(this.species && this.species.nodes.length>1){
-                  let nearest=this.species.nodes.reduce((a,n)=>Math.hypot(n.x-b.x,n.y-b.y)<Math.hypot(a.x-b.x,a.y-b.y)?n:a);
-                  nearest.angle = Math.atan2(b.y-nearest.y,b.x-nearest.x)*this.genes.branchAffinity + nearest.angle*(1-this.genes.branchAffinity);
-                }
-              });
-
+              if (p.branches)
+                p.branches.forEach((b, i) => {
+                  b.x += b.vx;
+                  b.y += b.vy;
+                  b.lifetime--;
+                  ctx.fillStyle = "rgba(0,255,180,0.6)";
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, 1.5, 0, Math.PI * 2);
+                  ctx.fill();
+                  if (b.lifetime <= 0) p.branches.splice(i, 1);
+                  if (this.species && this.species.nodes.length > 1) {
+                    let nearest = this.species.nodes.reduce((a, n) =>
+                      Math.hypot(n.x - b.x, n.y - b.y) <
+                      Math.hypot(a.x - b.x, a.y - b.y)
+                        ? n
+                        : a,
+                    );
+                    nearest.angle =
+                      Math.atan2(b.y - nearest.y, b.x - nearest.x) *
+                        this.genes.branchAffinity +
+                      nearest.angle * (1 - this.genes.branchAffinity);
+                  }
+                });
             });
           }
         }
-        spawnConnectionParticles(){
-          if(!this.parent) return;
-          this.connectionParticles=[];
-          for(let i=0;i<this.genes.connectionDensity;i++){
-            this.connectionParticles.push({t:Math.random(), dir:Math.random()<0.5?1:-1, jitter:(Math.random()-0.5)*3, x:this.parent.x, y:this.parent.y});
+
+        spawnConnectionParticles() {
+          if (!this.parent) return;
+          this.connectionParticles = [];
+          for (let i = 0; i < this.genes.connectionDensity; i++) {
+            this.connectionParticles.push({
+              t: Math.random(),
+              dir: Math.random() < 0.5 ? 1 : -1,
+              jitter: (Math.random() - 0.5) * 3,
+              x: this.parent.x,
+              y: this.parent.y,
+            });
           }
         }
-        reproduce(){
-          if(Math.random()>this.genes.growthBias) return null;
-          let childGenes={};
-          for(let k in this.genes) childGenes[k]=mutateGene(this.genes[k],0.1);
-          let child=new Node(this.x,this.y,this.angle+(Math.random()-0.5),childGenes,this);
+
+        reproduce() {
+          if (Math.random() > this.genes.growthBias) return null;
+          let childGenes = {};
+          for (let k in this.genes) childGenes[k] = mutate(this.genes[k], 0.1);
+          let child = new Node(
+            this.x,
+            this.y,
+            this.angle + (Math.random() - 0.5),
+            childGenes,
+            this,
+          );
           child.spawnConnectionParticles();
           return child;
         }
       }
 
-      class Species{
-        constructor(color){this.color=color||randomColor(); this.nodes=[]; this.gen=1;}
-        addNode(node){node.species=this; node.color=this.color; this.nodes.push(node); node.spawnConnectionParticles();}
-        updateNodes(){this.nodes.forEach(n=>n.update());}
-        processGeneration(){
-          let newNodes=[];
-          this.nodes.forEach(n=>{
-            if(n.food===0) return;
-            if(n.food>=3){n.food=0; let child=n.reproduce(); if(child) newNodes.push(child);}
-            n.food=0; newNodes.push(n);
+      // Species
+      class Species {
+        constructor(color) {
+          this.color = color || randomColor();
+          this.nodes = [];
+          this.gen = 1;
+        }
+        addNode(node) {
+          node.species = this;
+          node.color = this.color;
+          this.nodes.push(node);
+          node.spawnConnectionParticles();
+        }
+        updateNodes() {
+          this.nodes.forEach((n) => n.update());
+        }
+        processGeneration() {
+          let newNodes = [];
+          this.nodes.forEach((n) => {
+            if (n.food === 0) return;
+            if (n.food >= 3) {
+              n.food = 0;
+              let child = n.reproduce();
+              if (child) newNodes.push(child);
+            }
+            n.food = 0;
+            newNodes.push(n);
           });
-          this.nodes=newNodes; this.gen++;
+          this.nodes = newNodes;
+          this.gen++;
         }
-        drawNodes(){
-          if(this.nodes.length<2) return this.nodes.forEach(n=>n.update());
-          ctx.fillStyle=this.color.replace('rgb','rgba').replace(')',',0.3)');
-          ctx.strokeStyle=this.color.replace('rgb','rgba').replace(')',',0.6)');
-          ctx.lineWidth=3;
-          ctx.beginPath();
-          for(let i=0;i<this.nodes.length;i++){
-            const n=this.nodes[i];
-            const prev=this.nodes[(i-1+this.nodes.length)%this.nodes.length];
-            let jitterX=(Math.random()-0.5)*n.genes.edgeWobble;
-            let jitterY=(Math.random()-0.5)*n.genes.edgeWobble;
-            if(i===0) ctx.moveTo(n.x+jitterX,n.y+jitterY);
-            else ctx.quadraticCurveTo(prev.x+jitterX,prev.y+jitterY,n.x+jitterX,n.y+jitterY);
+        drawNodes() {
+          if (this.nodes.length < 2) {
+            this.nodes.forEach((n) => n.update());
+            return;
           }
-          ctx.closePath(); ctx.fill(); ctx.stroke();
-          this.nodes.forEach(n=>{ctx.fillStyle=this.color.replace('rgb','rgba').replace(')',',0.8)'); ctx.beginPath(); ctx.arc(n.x,n.y,3,0,Math.PI*2); ctx.fill();});
-          this.nodes.forEach(n=>n.connectionParticles.forEach(p=>{
-            ctx.fillStyle=this.color.replace('rgb','rgba').replace(')',',0.8)'); ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill();
-            if(p.branches) p.branches.forEach(b=>{ctx.fillStyle=this.color.replace('rgb','rgba').replace(')',',0.6)'; ctx.beginPath(); ctx.arc(b.x,b.y,1.5,0,Math.PI*2); ctx.fill();});
-          }));
+          ctx.fillStyle = this.color
+            .replace("rgb", "rgba")
+            .replace(")", ",0.3)");
+          ctx.strokeStyle = this.color
+            .replace("rgb", "rgba")
+            .replace(")", ",0.6)");
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          for (let i = 0; i < this.nodes.length; i++) {
+            const n = this.nodes[i];
+            const prev =
+              this.nodes[(i - 1 + this.nodes.length) % this.nodes.length];
+            let jx = (Math.random() - 0.5) * n.genes.edgeWobble;
+            let jy = (Math.random() - 0.5) * n.genes.edgeWobble;
+            if (i === 0) ctx.moveTo(n.x + jx, n.y + jy);
+            else
+              ctx.quadraticCurveTo(
+                prev.x + jx,
+                prev.y + jy,
+                n.x + jx,
+                n.y + jy,
+              );
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          this.nodes.forEach((n) => {
+            ctx.fillStyle = this.color
+              .replace("rgb", "rgba")
+              .replace(")", ",0.8");
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          this.nodes.forEach((n) =>
+            n.connectionParticles.forEach((p) => {
+              ctx.fillStyle = this.color
+                .replace("rgb", "rgba")
+                .replace(")", ",0.8");
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+              ctx.fill();
+              if (p.branches)
+                p.branches.forEach((b) => {
+                  ctx.fillStyle = this.color
+                    .replace("rgb", "rgba")
+                    .replace(")", ",0.6");
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, 1.5, 0, Math.PI * 2);
+                  ctx.fill();
+                });
+            }),
+          );
         }
-        topFood(){return Math.max(...this.nodes.map(n=>n.food),0);}
+        topFood() {
+          return Math.max(...this.nodes.map((n) => n.food), 0);
+        }
       }
 
-      // Spawn / Reset
-      function spawnSlime(){const s=new Species(); s.addNode(new Node(c.width/2+Math.random()*20-10, c.height/2+Math.random()*20-10,Math.random()*Math.PI*2)); speciesList.push(s);}
-      function reset(){speciesList=[]; foods=[]; genStartTime=Date.now(); for(let i=0;i<20;i++) foods.push({x:Math.random()*c.width, y:Math.random()*c.height}); spawnSlime();}
+      // Spawn/reset
+      function spawnSpecies() {
+        const s = new Species();
+        s.addNode(
+          new Node(
+            c.width / 2 + Math.random() * 50 - 25,
+            c.height / 2 + Math.random() * 50 - 25,
+            Math.random() * Math.PI * 2,
+          ),
+        );
+        speciesList.push(s);
+      }
+      function resetLab() {
+        speciesList = [];
+        foods = [];
+        genStartTime = Date.now();
+        for (let i = 0; i < 20; i++)
+          foods.push({
+            x: Math.random() * c.width,
+            y: Math.random() * c.height,
+          });
+        spawnSpecies();
+      }
 
       // Click
-      c.onclick=e=>{let rect=c.getBoundingClientRect(); let mx=e.clientX-rect.left, my=e.clientY-rect.top; selected=null; for(const s of speciesList){selected=s.nodes.find(n=>Math.hypot(n.x-mx,n.y-my)<10); if(selected) break;}};
+      c.onclick = (e) => {
+        let rect = c.getBoundingClientRect();
+        let mx = e.clientX - rect.left,
+          my = e.clientY - rect.top;
+        selected = null;
+        for (const s of speciesList) {
+          selected = s.nodes.find((n) => Math.hypot(n.x - mx, n.y - my) < 10);
+          if (selected) break;
+        }
+      };
 
       // Graph
-      function drawGraph(){
-        gctx.clearRect(0,0,320,150);
-        gctx.fillStyle="rgba(0,0,0,0.2)"; gctx.fillRect(0,0,320,150);
-        speciesList.forEach((s,idx)=>{
-          gctx.beginPath(); gctx.strokeStyle=s.color; gctx.lineWidth=2; gctx.shadowColor=s.color; gctx.shadowBlur=8;
-          let data=graphData.map(g=>g[idx]??0);
-          data.forEach((v,i)=>{let x=i*3, y=150-(v/10)*140; if(i===0) gctx.moveTo(x,y); else gctx.lineTo(x,y);});
+      function drawGraph() {
+        gctx.clearRect(0, 0, 320, 150);
+        gctx.fillStyle = "rgba(0,0,0,0.2)";
+        gctx.fillRect(0, 0, 320, 150);
+        speciesList.forEach((s, idx) => {
+          gctx.beginPath();
+          gctx.strokeStyle = s.color;
+          gctx.lineWidth = 2;
+          gctx.shadowColor = s.color;
+          gctx.shadowBlur = 8;
+          let data = graphData.map((g) => g[idx] ?? 0);
+          data.forEach((v, i) => {
+            let x = i * 3,
+              y = 150 - (v / 10) * 140;
+            if (i === 0) gctx.moveTo(x, y);
+            else gctx.lineTo(x, y);
+          });
           gctx.stroke();
         });
-        gctx.shadowBlur=0;
-        gctx.fillStyle="#0ff"; gctx.font="10px monospace";
-        gctx.fillText(`Gen: ${speciesList[0]?.gen??1}`,5,12);
-        speciesList.forEach((s,i)=>gctx.fillText(`S${i+1} nodes:${s.nodes.length} topFood:${s.topFood()}`,5,25+12*i));
+        gctx.shadowBlur = 0;
+        gctx.fillStyle = "#0ff";
+        gctx.font = "10px monospace";
+        gctx.fillText(`Gen: ${speciesList[0]?.gen ?? 1}`, 5, 12);
+        speciesList.forEach((s, i) =>
+          gctx.fillText(
+            `S${i + 1} nodes:${s.nodes.length} topFood:${s.topFood()}`,
+            5,
+            25 + 12 * i,
+          ),
+        );
       }
 
-      // Main loop
-      function loop(){
-        const now=Date.now(); const elapsed=(now-genStartTime)/1000;
-        ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(0,0,c.width,c.height);
-
-        foods.forEach(f=>{ctx.fillStyle="yellow"; ctx.beginPath(); ctx.arc(f.x,f.y,4,0,Math.PI*2); ctx.fill();});
-        speciesList.forEach(s=>s.updateNodes());
-        speciesList.forEach(s=>s.drawNodes());
-
-        if(selected){ctx.strokeStyle="magenta"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(selected.x,selected.y,6,0,Math.PI*2); ctx.stroke();
-        document.getElementById('brain').innerText=JSON.stringify(selected.genes,null,2);}
-
-        let info=speciesList.map((s,i)=>`Species ${i+1}: ${s.nodes.length} nodes`).join("\n");
-        document.getElementById('stats').innerText=`Gen Timer: ${Math.max(0,GEN_DURATION-Math.floor(elapsed))}s\nSpecies: ${speciesList.length}\n${info}`;
-
-        if(Math.random()<0.01) foods.push({x:Math.random()*c.width,y:Math.random()*c.height});
-
-        if(elapsed>=GEN_DURATION){speciesList.forEach(s=>s.processGeneration()); genStartTime=Date.now();}
-
-        let topFoods=speciesList.map(s=>s.topFood());
-        graphData.push(topFoods); if(graphData.length>100) graphData.shift();
+      // Loop
+      function loop() {
+        const now = Date.now();
+        const elapsed = (now - genStartTime) / 1000;
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(0, 0, c.width, c.height);
+        foods.forEach((f) => {
+          ctx.fillStyle = "yellow";
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        speciesList.forEach((s) => s.updateNodes());
+        speciesList.forEach((s) => s.drawNodes());
+        if (selected) {
+          ctx.strokeStyle = "magenta";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(selected.x, selected.y, 6, 0, Math.PI * 2);
+          ctx.stroke();
+          document.getElementById("brain").innerText = JSON.stringify(
+            selected.genes,
+            null,
+            2,
+          );
+        }
+        let info = speciesList
+          .map((s, i) => `Species ${i + 1}: ${s.nodes.length} nodes`)
+          .join("\n");
+        document.getElementById("stats").innerText =
+          `Gen Timer: ${Math.max(0, GEN_DURATION - Math.floor(elapsed))}s\nSpecies: ${speciesList.length}\n${info}`;
+        if (Math.random() < 0.01)
+          foods.push({
+            x: Math.random() * c.width,
+            y: Math.random() * c.height,
+          });
+        if (elapsed >= GEN_DURATION) {
+          speciesList.forEach((s) => s.processGeneration());
+          genStartTime = Date.now();
+        }
+        let topFoods = speciesList.map((s) => s.topFood());
+        graphData.push(topFoods);
+        if (graphData.length > 100) graphData.shift();
         drawGraph();
-
         requestAnimationFrame(loop);
       }
 
-      reset(); loop();
+      resetLab();
+      loop();
     </script>
   </body>
 </html>
+
+✅ This version should:
